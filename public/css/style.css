@@ -16,5 +16,17 @@
 }
 
 .flex {
-    display: flex
+    display: flex;
+}
+
+.grow {
+    flex-grow: 1;
+}
+
+.self-center {
+    align-self: center;
+}
+
+.break-all {
+    word-break: break-all;
 }

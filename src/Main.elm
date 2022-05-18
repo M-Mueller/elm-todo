@@ -1,11 +1,13 @@
 module Main exposing (..)
 
 import Browser
-import Html exposing (Html, button, div, h1, input, text)
-import Html.Attributes exposing (class, disabled, style, value)
+import Html exposing (Html, article, button, div, h1, input, span, text)
+import Html.Attributes exposing (class, classList, disabled, style, value)
 import Html.Events exposing (onClick, onInput)
 import Icons
 import Json.Decode
+import Random
+import Uuid4
 
 
 
@@ -14,7 +16,7 @@ import Json.Decode
 
 main : Program () Model Msg
 main =
-    Browser.sandbox { init = init, update = update, view = view }
+    Browser.element { init = init, subscriptions = subscriptions, update = update, view = view }
 
 
 
@@ -34,9 +36,18 @@ type alias Model =
     }
 
 
-init : Model
-init =
-    { newTodoText = "", todos = [] }
+init : flags -> ( Model, Cmd Msg )
+init _ =
+    ( { newTodoText = "", todos = [] }, Cmd.none )
+
+
+
+-- SUBSCRIPTIONS
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
 
 
 
@@ -45,21 +56,38 @@ init =
 
 type Msg
     = SetNewTodoText String
-    | AddTodo
+    | SubmitNewTodo
+    | AddTodo Todo
+    | ToggleTodo String
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         SetNewTodoText text ->
-            { model | newTodoText = text }
+            ( { model | newTodoText = text }, Cmd.none )
 
-        AddTodo ->
+        SubmitNewTodo ->
             let
-                newTodo =
-                    { id = "123", text = model.newTodoText, isDone = False }
+                newTodo uuid =
+                    { id = uuid, text = model.newTodoText, isDone = False }
             in
-            { model | newTodoText = "", todos = newTodo :: model.todos }
+            ( model, Random.generate (newTodo >> AddTodo) Uuid4.uuid4 )
+
+        AddTodo todo ->
+            ( { model | newTodoText = "", todos = todo :: model.todos }, Cmd.none )
+
+        ToggleTodo id ->
+            let
+                updateTodo : Todo -> Todo
+                updateTodo todo =
+                    if todo.id == id then
+                        { todo | isDone = not todo.isDone }
+
+                    else
+                        todo
+            in
+            ( { model | todos = List.map updateTodo model.todos }, Cmd.none )
 
 
 
@@ -86,12 +114,25 @@ view model =
     div [ class "container" ]
         [ h1 [] [ text "To-Do List" ]
         , div [ class "space-x", class "flex" ]
-            [ input [ value model.newTodoText, onInput SetNewTodoText, onPressEnter AddTodo ] []
+            [ input [ value model.newTodoText, onInput SetNewTodoText, onPressEnter SubmitNewTodo ] []
             , button
                 [ style "width" "min-content"
-                , onClick AddTodo
+                , onClick SubmitNewTodo
                 , disabled (String.isEmpty model.newTodoText)
                 ]
                 [ Icons.plus ]
             ]
+        , div [] (List.map viewTodo model.todos)
+        ]
+
+
+viewTodo : Todo -> Html Msg
+viewTodo todo =
+    article [ class "flex, space-x", classList [ ( "dimmed", todo.isDone ) ] ]
+        [ span
+            [ class "grow self-center word-break"
+            , classList [ ( "line-through", todo.isDone ) ]
+            , onClick (ToggleTodo todo.id)
+            ]
+            [ text todo.text ]
         ]
