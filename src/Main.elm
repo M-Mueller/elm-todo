@@ -1,4 +1,4 @@
-module Main exposing (..)
+port module Main exposing (..)
 
 import Browser
 import Html exposing (Html, article, button, div, h1, input, span, text)
@@ -6,6 +6,7 @@ import Html.Attributes exposing (class, classList, disabled, style, value)
 import Html.Events exposing (onClick, onInput)
 import Icons
 import Json.Decode
+import Json.Encode
 import Random
 import Uuid4
 
@@ -20,25 +21,67 @@ main =
 
 
 
+-- PORTS
+
+
+port putTodo : Json.Encode.Value -> Cmd msg
+
+
+port fetchTodos : () -> Cmd msg
+
+
+port onPouchError : (Json.Decode.Value -> msg) -> Sub msg
+
+
+port onTodosChanged : (Json.Decode.Value -> msg) -> Sub msg
+
+
+
 -- MODEL
 
 
 type alias Todo =
     { id : String
+    , rev : String
     , text : String
     , isDone : Bool
     }
 
 
+encodeTodo : Todo -> Json.Encode.Value
+encodeTodo todo =
+    Json.Encode.object
+        [ ( "_id", Json.Encode.string todo.id )
+        , ( "_rev", Json.Encode.string todo.rev )
+        , ( "text", Json.Encode.string todo.text )
+        , ( "isDone", Json.Encode.bool todo.isDone )
+        ]
+
+
+decodeTodo : Json.Decode.Decoder Todo
+decodeTodo =
+    Json.Decode.map4 Todo
+        (Json.Decode.field "_id" Json.Decode.string)
+        (Json.Decode.field "_rev" Json.Decode.string)
+        (Json.Decode.field "text" Json.Decode.string)
+        (Json.Decode.field "isDone" Json.Decode.bool)
+
+
 type alias Model =
     { newTodoText : String
     , todos : List Todo
+    , lastError : String
     }
 
 
 init : flags -> ( Model, Cmd Msg )
 init _ =
-    ( { newTodoText = "", todos = [] }, Cmd.none )
+    ( { newTodoText = ""
+      , todos = []
+      , lastError = ""
+      }
+    , fetchTodos ()
+    )
 
 
 
@@ -47,7 +90,20 @@ init _ =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    let
+        decodeMsg : Json.Decode.Decoder Msg -> Json.Encode.Value -> Msg
+        decodeMsg decoder value =
+            case Json.Decode.decodeValue decoder value of
+                Ok msg ->
+                    msg
+
+                Err err ->
+                    ShowError (Json.Decode.errorToString err)
+    in
+    Sub.batch
+        [ onPouchError (decodeMsg (Json.Decode.field "message" Json.Decode.string |> Json.Decode.map ShowError))
+        , onTodosChanged (decodeMsg (Json.Decode.list decodeTodo |> Json.Decode.map SetTodos))
+        ]
 
 
 
@@ -58,7 +114,10 @@ type Msg
     = SetNewTodoText String
     | SubmitNewTodo
     | AddTodo Todo
+    | SetTodos (List Todo)
+    | ReloadTodos
     | ToggleTodo String
+    | ShowError String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -70,24 +129,39 @@ update msg model =
         SubmitNewTodo ->
             let
                 newTodo uuid =
-                    { id = uuid, text = model.newTodoText, isDone = False }
+                    { id = uuid, rev = "", text = model.newTodoText, isDone = False }
             in
             ( model, Random.generate (newTodo >> AddTodo) Uuid4.uuid4 )
 
         AddTodo todo ->
-            ( { model | newTodoText = "", todos = todo :: model.todos }, Cmd.none )
+            ( { model | newTodoText = "" }, putTodo (encodeTodo todo) )
+
+        SetTodos todos ->
+            ( { model | todos = todos }, Cmd.none )
+
+        ReloadTodos ->
+            ( model, fetchTodos () )
 
         ToggleTodo id ->
             let
-                updateTodo : Todo -> Todo
-                updateTodo todo =
-                    if todo.id == id then
-                        { todo | isDone = not todo.isDone }
-
-                    else
-                        todo
+                updatedTodo : Maybe Todo
+                updatedTodo =
+                    model.todos
+                        |> List.filter (\todo -> todo.id == id)
+                        |> List.head
+                        |> Maybe.map (\todo -> { todo | isDone = not todo.isDone })
             in
-            ( { model | todos = List.map updateTodo model.todos }, Cmd.none )
+            ( model
+            , case updatedTodo of
+                Just todo ->
+                    putTodo (encodeTodo todo)
+
+                Nothing ->
+                    Cmd.none
+            )
+
+        ShowError error ->
+            ( { model | lastError = error }, Cmd.none )
 
 
 
@@ -113,6 +187,7 @@ view : Model -> Html Msg
 view model =
     div [ class "container" ]
         [ h1 [] [ text "To-Do List" ]
+        , div [ class "danger" ] [ text model.lastError ]
         , div [ class "space-x", class "flex" ]
             [ input [ value model.newTodoText, onInput SetNewTodoText, onPressEnter SubmitNewTodo ] []
             , button

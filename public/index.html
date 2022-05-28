@@ -1,20 +1,48 @@
 <!doctype html>
 <html>
-<head>
-  <title>Todo</title>
-  <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="shortcut icon" href="elm.ico" />
-  <link rel="stylesheet" href="css/pico.min.css">
-  <link rel="stylesheet" href="css/style.css">
-  <script src="main.js"></script>
-</head>
-<body>
-  <div id="myapp"></div>
-  <script>
-    var app = Elm.Main.init({
-      node: document.getElementById('myapp')
-    });
-  </script>
-</body>
+  <head>
+    <title>Todo</title>
+    <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="shortcut icon" href="elm.ico" />
+    <link rel="stylesheet" href="css/pico.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/pouchdb-7.3.0.min.js"></script>
+    <script src="main.js"></script>
+  </head>
+  <body>
+    <div id="myapp"></div>
+    <script>
+      var db = new PouchDB("todos");
+      var app = Elm.Main.init({
+        node: document.getElementById('myapp')
+      });
+
+      app.ports.putTodo.subscribe((todo) => {
+        db.put(todo)
+          .then((response) => {})
+          .catch((err) => {
+            console.log(err);
+            app.ports.onPouchError.send(err);
+          });
+      });
+
+      function fetchTodos() {
+        db.allDocs({
+          include_docs: true
+        }).then((response) => {
+            app.ports.onTodosChanged.send(response.rows.map((row) => row.doc));
+        }).catch((err) => {
+            console.log(err);
+            app.ports.onPouchError.send(err);
+        });
+      }
+
+      app.ports.fetchTodos.subscribe(fetchTodos)
+      db.changes({
+        since: 'now',
+        live: true
+      }).on('change', fetchTodos);
+    </script>
+  </body>
 </html>
