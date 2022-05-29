@@ -29,6 +29,9 @@ main =
 port putTodo : Json.Encode.Value -> Cmd msg
 
 
+port deleteTodo : Json.Encode.Value -> Cmd msg
+
+
 port fetchTodos : () -> Cmd msg
 
 
@@ -121,9 +124,9 @@ type Msg
     | UpdateTodoCreated Todo
     | AddTodo Todo
     | SetTodos (List Todo)
-    | ReloadTodos
-    | ToggleTodo String
+    | ToggleTodo Todo
     | ShowError String
+    | DeleteTodo Todo
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -153,26 +156,11 @@ update msg model =
         SetTodos todos ->
             ( { model | todos = todos }, Cmd.none )
 
-        ReloadTodos ->
-            ( model, fetchTodos () )
+        ToggleTodo todo ->
+            ( model, putTodo (encodeTodo { todo | isDone = not todo.isDone }) )
 
-        ToggleTodo id ->
-            let
-                updatedTodo : Maybe Todo
-                updatedTodo =
-                    model.todos
-                        |> List.filter (\todo -> todo.id == id)
-                        |> List.head
-                        |> Maybe.map (\todo -> { todo | isDone = not todo.isDone })
-            in
-            ( model
-            , case updatedTodo of
-                Just todo ->
-                    putTodo (encodeTodo todo)
-
-                Nothing ->
-                    Cmd.none
-            )
+        DeleteTodo todo ->
+            ( model, deleteTodo (encodeTodo todo) )
 
         ShowError error ->
             ( { model | lastError = error }, Cmd.none )
@@ -224,11 +212,22 @@ view model =
 
 viewTodo : Todo -> Html Msg
 viewTodo todo =
-    article [ class "flex, space-x", classList [ ( "dimmed", todo.isDone ) ] ]
+    article [ class "flex space-x", classList [ ( "dimmed", todo.isDone ) ] ]
         [ span
             [ class "grow self-center word-break"
             , classList [ ( "line-through", todo.isDone ) ]
-            , onClick (ToggleTodo todo.id)
+            , onClick (ToggleTodo todo)
             ]
-            [ text todo.text ]
+            [ text todo.text
+            ]
+        , if todo.isDone then
+            Html.button
+                [ class "outline danger self-center w-min"
+                , style "margin-bottom" "0px"
+                , onClick (DeleteTodo todo)
+                ]
+                [ Icons.trash ]
+
+          else
+            text ""
         ]

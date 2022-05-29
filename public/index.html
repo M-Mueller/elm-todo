@@ -27,6 +27,15 @@
           });
       });
 
+      app.ports.deleteTodo.subscribe((todo) => {
+        db.remove(todo)
+          .then((response) => {})
+          .catch((err) => {
+            console.log(err);
+            app.ports.onPouchError.send(err);
+          });
+      });
+
       function fetchTodos() {
         db.allDocs({
           include_docs: true

@@ -30,3 +30,7 @@
 .break-all {
     word-break: break-all;
 }
+
+.w-min {
+    width: min-content;
+}
