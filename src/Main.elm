@@ -78,6 +78,7 @@ decodeTodo =
 type alias Model =
     { newTodoText : String
     , todos : List Todo
+    , editedTodo : Maybe Todo
     , lastError : String
     }
 
@@ -86,6 +87,7 @@ init : flags -> ( Model, Cmd Msg )
 init _ =
     ( { newTodoText = ""
       , todos = []
+      , editedTodo = Nothing
       , lastError = ""
       }
     , fetchTodos ()
@@ -127,6 +129,10 @@ type Msg
     | ToggleTodo Todo
     | ShowError String
     | DeleteTodo Todo
+    | StartEditTodo Todo
+    | SetEditedTodoText String
+    | SaveEditedTodo
+    | CancelEditTodo
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -164,6 +170,28 @@ update msg model =
 
         ShowError error ->
             ( { model | lastError = error }, Cmd.none )
+
+        StartEditTodo todo ->
+            ( { model | editedTodo = Just todo }, Cmd.none )
+
+        SetEditedTodoText text ->
+            case model.editedTodo of
+                Just editedTodo ->
+                    ( { model | editedTodo = Just { editedTodo | text = text } }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        SaveEditedTodo ->
+            case model.editedTodo of
+                Just editedTodo ->
+                    ( { model | editedTodo = Nothing }, putTodo (encodeTodo editedTodo) )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        CancelEditTodo ->
+            ( { model | editedTodo = Nothing }, Cmd.none )
 
 
 
@@ -206,12 +234,26 @@ view model =
                 ]
                 [ Icons.plus ]
             ]
-        , div [] (List.map viewTodo (remainingTodos ++ doneTodos))
+        , div [] (List.map (viewTodo model.editedTodo) (remainingTodos ++ doneTodos))
         ]
 
 
-viewTodo : Todo -> Html Msg
-viewTodo todo =
+viewTodo : Maybe Todo -> Todo -> Html Msg
+viewTodo editedTodo todo =
+    case editedTodo of
+        Just edited ->
+            if edited.id == todo.id then
+                viewEditedTodo edited
+
+            else
+                viewRegularTodo todo
+
+        Nothing ->
+            viewRegularTodo todo
+
+
+viewRegularTodo : Todo -> Html Msg
+viewRegularTodo todo =
     article [ class "flex space-x", classList [ ( "dimmed", todo.isDone ) ] ]
         [ span
             [ class "grow self-center word-break"
@@ -229,5 +271,37 @@ viewTodo todo =
                 [ Icons.trash ]
 
           else
-            text ""
+            Html.button
+                [ class "outline self-center w-min"
+                , style "margin-bottom" "0px"
+                , onClick (StartEditTodo todo)
+                ]
+                [ Icons.edit ]
+        ]
+
+
+viewEditedTodo : Todo -> Html Msg
+viewEditedTodo todo =
+    article [ class "flex space-x", classList [ ( "dimmed", todo.isDone ) ] ]
+        [ input
+            [ class "grow self-center word-break"
+            , style "margin-bottom" "0px"
+            , value todo.text
+            , onInput SetEditedTodoText
+            , onPressEnter SaveEditedTodo
+            ]
+            []
+        , Html.button
+            [ class "self-center w-min"
+            , style "margin-bottom" "0px"
+            , disabled (String.isEmpty todo.text)
+            , onClick SaveEditedTodo
+            ]
+            [ Icons.save ]
+        , Html.button
+            [ class "outline self-center w-min"
+            , style "margin-bottom" "0px"
+            , onClick CancelEditTodo
+            ]
+            [ Icons.x ]
         ]
