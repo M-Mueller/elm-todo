@@ -8,6 +8,8 @@ import Icons
 import Json.Decode
 import Json.Encode
 import Random
+import Task
+import Time
 import Uuid4
 
 
@@ -45,6 +47,7 @@ type alias Todo =
     , rev : String
     , text : String
     , isDone : Bool
+    , created : Time.Posix
     }
 
 
@@ -55,16 +58,18 @@ encodeTodo todo =
         , ( "_rev", Json.Encode.string todo.rev )
         , ( "text", Json.Encode.string todo.text )
         , ( "isDone", Json.Encode.bool todo.isDone )
+        , ( "created", Json.Encode.int (Time.posixToMillis todo.created) )
         ]
 
 
 decodeTodo : Json.Decode.Decoder Todo
 decodeTodo =
-    Json.Decode.map4 Todo
+    Json.Decode.map5 Todo
         (Json.Decode.field "_id" Json.Decode.string)
         (Json.Decode.field "_rev" Json.Decode.string)
         (Json.Decode.field "text" Json.Decode.string)
         (Json.Decode.field "isDone" Json.Decode.bool)
+        (Json.Decode.field "created" Json.Decode.int |> Json.Decode.map Time.millisToPosix)
 
 
 type alias Model =
@@ -113,6 +118,7 @@ subscriptions _ =
 type Msg
     = SetNewTodoText String
     | SubmitNewTodo
+    | UpdateTodoCreated Todo
     | AddTodo Todo
     | SetTodos (List Todo)
     | ReloadTodos
@@ -129,9 +135,17 @@ update msg model =
         SubmitNewTodo ->
             let
                 newTodo uuid =
-                    { id = uuid, rev = "", text = model.newTodoText, isDone = False }
+                    { id = uuid
+                    , rev = ""
+                    , text = model.newTodoText
+                    , isDone = False
+                    , created = Time.millisToPosix 0
+                    }
             in
-            ( model, Random.generate (newTodo >> AddTodo) Uuid4.uuid4 )
+            ( model, Random.generate (newTodo >> UpdateTodoCreated) Uuid4.uuid4 )
+
+        UpdateTodoCreated todo ->
+            ( model, Time.now |> Task.perform (\time -> AddTodo { todo | created = time }) )
 
         AddTodo todo ->
             ( { model | newTodoText = "" }, putTodo (encodeTodo todo) )
@@ -185,6 +199,13 @@ onPressEnter message =
 
 view : Model -> Html Msg
 view model =
+    let
+        ( doneTodos, remainingTodos ) =
+            model.todos
+                |> List.sortBy (.created >> Time.posixToMillis)
+                |> List.reverse
+                |> List.partition .isDone
+    in
     div [ class "container" ]
         [ h1 [] [ text "To-Do List" ]
         , div [ class "danger" ] [ text model.lastError ]
@@ -197,7 +218,7 @@ view model =
                 ]
                 [ Icons.plus ]
             ]
-        , div [] (List.map viewTodo model.todos)
+        , div [] (List.map viewTodo (remainingTodos ++ doneTodos))
         ]
 
 
